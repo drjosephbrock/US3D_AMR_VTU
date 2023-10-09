@@ -41,7 +41,8 @@ endif()
 set(CMAKE_NINJA_FORCE_RESPONSE_FILE "ON" CACHE BOOL "Force Ninja to use response files.")
 
 set(SOURCES
-  source/read_US3D_hdf5.cpp
+source/write_us3d_vtu.cpp
+source/read_US3D_hdf5.cpp
   source/main.cpp
 )
 add_executable(writeAMRVTU MACOSX_BUNDLE ${SOURCES})

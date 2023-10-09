@@ -194,3 +194,31 @@ std::tuple< std::vector<double>, std::vector<int>, std::vector<int> > readGridAr
     HDF5Log("returning tuple....");
     return std::make_tuple(xcn, ifn, ief);
 }
+
+std::vector<double> readUS3DSolutionFile(const char* datafile, const char* dataName, int numRows, int numCols){
+
+    herr_t status;
+
+    hid_t file_id = H5Fopen(datafile, H5F_ACC_RDONLY, H5P_DEFAULT);
+    hid_t dataset_id = H5Dopen(file_id, dataName, H5P_DEFAULT);
+    hid_t dataspace_id = H5Dget_space(dataset_id);
+    
+    // Get the dimensions of the data
+    hsize_t dims[2];
+    H5Sget_simple_extent_dims(dataspace_id, dims, NULL);
+    numCols = (int)dims[0];
+    numRows = (int)dims[1];
+    std::vector<double> data(numRows * numCols);
+
+    // Read the data from the dataset
+    H5Dread(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, data.data());
+
+
+    // Close the dataset, dataspace, and file
+    H5Sclose(dataspace_id);
+    H5Dclose(dataset_id);
+    H5Fclose(file_id);
+
+    return data;
+
+}
