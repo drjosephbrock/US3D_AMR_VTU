@@ -11,8 +11,7 @@ void HDF5Log(const std::string& message){
     std::cout << message << std::endl;
 }
 
-std::tuple<int, int, int, int>  readGridArraySizes(const char* gridfile){
-    int nNodes, nFaces, nCells, nZones;
+void readGridArraySizes(const char* gridfile, int* nn, int* nf, int* nc, int* nz){
     hid_t grid_id, group_id;
     hid_t nn_id, nc_id, nf_id, nz_id;
     herr_t status;
@@ -32,30 +31,32 @@ std::tuple<int, int, int, int>  readGridArraySizes(const char* gridfile){
     if (nn_id < 0 || nc_id < 0 || nf_id < 0 || nz_id < 0) {
         HDF5Log("Failed to open one or more datasets.");
         H5Fclose(grid_id); // Close file before returning
-        return std::make_tuple(-1, -1, -1, -1);
+        return;
     }
 
     // Read attributes
     // HDF5Log("Reading nn");
-    status = H5Aread(nn_id, H5T_NATIVE_INT, &nNodes);
+    status = H5Aread(nn_id, H5T_NATIVE_INT, nn);
     if (status < 0) {
         HDF5Log("Error reading nn attribute.");
     }
+    std::cout << "nn=" << nn << std::endl;
 
     // HDF5Log("Reading nc");
-    status = H5Aread(nc_id, H5T_NATIVE_INT, &nCells);
+    status = H5Aread(nc_id, H5T_NATIVE_INT, nc);
     if (status < 0) {
         HDF5Log("Error reading nc attribute.");
     }
+    std::cout << "nc=" << nc << std::endl;
 
     // HDF5Log("Reading nf");
-    status = H5Aread(nf_id, H5T_NATIVE_INT, &nFaces);
+    status = H5Aread(nf_id, H5T_NATIVE_INT, nf);
     if (status < 0) {
         HDF5Log("Error readingnf attribute.");
     }
 
     // HDF5Log("Reading nz");
-    status = H5Aread(nz_id, H5T_NATIVE_INT, &nZones);
+    status = H5Aread(nz_id, H5T_NATIVE_INT, nz);
     if (status < 0) {
         HDF5Log("Error reading nz attribute.");
     }
@@ -68,11 +69,11 @@ std::tuple<int, int, int, int>  readGridArraySizes(const char* gridfile){
     status = H5Gclose(group_id);
     status = H5Fclose(grid_id);
 
-    return std::make_tuple(nNodes, nFaces, nCells, nZones);
+    return;
 }
 
-std::vector<double> readGridDoubleArray(const char* gridfile, const char* dataName){
-    
+void readGridDoubleArray(const char* gridfile, const char* dataName, std::vector<double>& data){
+
     herr_t status;
 
     hid_t file_id = H5Fopen(gridfile, H5F_ACC_RDONLY, H5P_DEFAULT);
@@ -82,10 +83,8 @@ std::vector<double> readGridDoubleArray(const char* gridfile, const char* dataNa
     // Get the dimensions of the data
     hsize_t dims[2];
     H5Sget_simple_extent_dims(dataspace_id, dims, NULL);
-    int numRows = dims[0];
-    int numCols = dims[1];
-    std::vector<double> data(numRows * numCols);
 
+    data.resize(dims[0] * dims[1]);
     // Read the data from the dataset
     H5Dread(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, data.data());
 
@@ -94,12 +93,13 @@ std::vector<double> readGridDoubleArray(const char* gridfile, const char* dataNa
     H5Sclose(dataspace_id);
     H5Dclose(dataset_id);
     H5Fclose(file_id);
+    std::cout << data[15] << ", " << data[16] << ", " << data[17] << std::endl; 
 
-    return data;
+    return;
 
 }
 
-std::vector<int> readGridIntegerArray(const char* gridfile, const char* dataName){
+void readGridIntegerArray(const char* gridfile, const char* dataName, std::vector<int>& data){
     
     herr_t status;
 
@@ -110,10 +110,8 @@ std::vector<int> readGridIntegerArray(const char* gridfile, const char* dataName
     // Get the dimensions of the data
     hsize_t dims[2];
     H5Sget_simple_extent_dims(dataspace_id, dims, NULL);
-    int numRows = dims[0];
-    int numCols = dims[1];
-    std::vector<int> data(numRows * numCols);
 
+    data.resize(dims[0] * dims[1]);
     // Read the data from the dataset
     H5Dread(dataset_id, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT, data.data());
 
@@ -123,76 +121,8 @@ std::vector<int> readGridIntegerArray(const char* gridfile, const char* dataName
     H5Dclose(dataset_id);
     H5Fclose(file_id);
 
-    return data;
+    return;
 
-}
-
-std::tuple< std::vector<double>, std::vector<int>, std::vector<int> > readGridArrays(const char* gridfile) {
-
-    // int nn, nf, nc, nz;
-
-    auto [nn, nf, nc, nz] = readGridArraySizes(gridfile);
-    printf("  --  Nodes: %d\n", nn);
-    printf("  --  Faces: %d\n", nf);
-    printf("  --  Cells: %d\n", nc);
-    printf("  --  Zones: %d\n", nz);
-    std::vector<double> xcn(nn * 3);
-    std::vector<int> ifn(nf * 8);
-    std::vector<int> ief(nc*25);
-    // hid_t grid_id, dataset_id, group_id, attr_id;
-    hid_t grid_id, xcn_id, ief_id, ifn_id;
-    herr_t status;
-
-    grid_id = H5Fopen(gridfile, H5F_ACC_RDONLY, H5P_DEFAULT);
-    if (grid_id < 0) {
-        HDF5Log("Failed to open grid file.");
-        return std::make_tuple(xcn, ifn, ief);
-    }
-
-    // Open datasets
-    xcn_id = H5Dopen(grid_id, "/xcn", H5P_DEFAULT);
-    ief_id = H5Dopen(grid_id, "/iefpoly", H5P_DEFAULT);
-    ifn_id = H5Dopen(grid_id, "/ifnpoly", H5P_DEFAULT);
-    
-    // Check for errors in opening datasets
-    if (xcn_id < 0 || ief_id < 0 || ifn_id < 0) {
-        HDF5Log("Failed to open one or more datasets.");
-        H5Fclose(grid_id); // Close file before returning
-        return std::make_tuple(xcn, ifn, ief);
-    }
-
-    // Read datasets
-    // HDF5Log("Reading xcn");
-    status = H5Dread(xcn_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, xcn.data());
-    if (status < 0) {
-        HDF5Log("Error reading xcn dataset.");
-    }
-
-    // HDF5Log("Reading ief");
-    status = H5Dread(ief_id, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT, ief.data());
-    if (status < 0) {
-        HDF5Log("Error reading ief dataset.");
-    }
-
-    // HDF5Log("Reading ifn");
-    status = H5Dread(ifn_id, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT, ifn.data());
-    if (status < 0) {
-        HDF5Log("Error reading ifn dataset.");
-    }
-    HDF5Log("Complete");
-
-    HDF5Log("Closing datasets");
-    // Close datasets
-    H5Dclose(xcn_id);
-    H5Dclose(ief_id);
-    H5Dclose(ifn_id);
-
-    HDF5Log("Closing file");
-    // Close file
-    H5Fclose(grid_id);
-
-    HDF5Log("returning tuple....");
-    return std::make_tuple(xcn, ifn, ief);
 }
 
 std::vector<double> readUS3DSolutionFile(const char* datafile, const char* dataName, int numRows, int numCols){

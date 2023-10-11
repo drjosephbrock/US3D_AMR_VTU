@@ -113,8 +113,16 @@ void add_cell(vtkNew<vtkUnstructuredGrid>& ugrid, const int& cellID,
 
 void add_points(vtkNew<vtkUnstructuredGrid>& ugrid, const std::vector<double>& xcn, const int& nn ){
     vtkNew<vtkPoints> points;
+    std::cout <<"add_points "<< nn << std::endl;
+    points->Allocate(nn);
+
     for (int i = 0; i < nn; i++){
-      points->InsertNextPoint(xcn[3*i], xcn[3*i + 1], xcn[3*i + 2]);
+        // Calculate the indices once to avoid repeated calculations
+        int index = 3 * i;
+        double x = xcn[index];
+        double y = xcn[index + 1];
+        double z = xcn[index + 2];
+      points->InsertNextPoint(x, y, z);
     }
     ugrid->SetPoints(points);
 }

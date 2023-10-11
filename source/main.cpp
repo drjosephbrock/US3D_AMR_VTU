@@ -6,6 +6,7 @@
 #include <vtkUnstructuredGrid.h>
 #include <vtkXMLUnstructuredGridWriter.h>
 #include <string>
+#include <cstring>
 #include "read_US3D_hdf5.H"
 #include "write_us3d_vtu.H"
 
@@ -30,20 +31,29 @@ void displayProgressBar(int progress, int total) {
 }
 
 
-int main(int, char*[])
+int main(int argc, char* argv[])
 {
+  bool plotSolution = true;
+  for (int i = 1; i < argc; i++){
+     if (std::strcmp(argv[i], "-plot_solution=false") == 0) {
+        plotSolution = false;
+        break;
+     }
+  }
+  if (plotSolution){
+     std::cout << "Plotting mesh and solution" << std::endl;
+  } else{
+     std::cout << "Plotting mesh only" << std::endl;
+  }
 
-  // const char* gridfile = "/h/group/FILESHARE/amr_grid.h5";
-  // const char* gridfile = "../../pre-amr/test/amr_grid.h5";
-  // const char* gridfile = "../../2cell_amr_grid.h5";
-  // const char* gridfile = "../../2d_msl_amr_grid.h5";
-  const char* gridfile = "amr_grid.h5";
+  const char* gridfile = "grid.h5";
   const char* datafile = "data.h5";
   vtkNew<vtkPoints> points;
   vtkNew<vtkUnstructuredGrid> ugrid;
 
-  
-  auto [nn, nf, nc, nz] = readGridArraySizes(gridfile);
+  int nn, nf, nc, nz;
+  readGridArraySizes(gridfile, &nn, &nf, &nc, &nz);
+
   printf("  --  Nodes: %d\n", nn);
   printf("  --  Faces: %d\n", nf);
   printf("  --  Cells: %d\n", nc);
@@ -62,21 +72,21 @@ int main(int, char*[])
 
   // Append points list
   {
-    auto xcn =readGridDoubleArray(gridfile, "/xcn");
-    int nn = xcn.size()/3;
+    printf("  --  reading points\n ");
+    std::vector<double> xcn(3*nn);
+    readGridDoubleArray(gridfile, "/xcn", xcn);
+    printf(" -- nn:%d\n",nn);
+    std::cout << xcn[15] << ", " << xcn[16] << ", " << xcn[17] << std::endl; 
     add_points(ugrid, xcn, nn);
-    // for (int i = 0; i < nn; i++){
-    //   points->InsertNextPoint(xcn[3*i], xcn[3*i + 1], xcn[3*i + 2]);
-    // }
-    // ugrid->SetPoints(points);
+    printf("  --  done ");
   }
 
   // Add face/cell connectivity data
   {
-    auto ief = readGridIntegerArray(gridfile, "/iefpoly");
-    auto ifn = readGridIntegerArray(gridfile, "/ifnpoly");
-    int ncellFaces, nFaceNodes, face, node;
-    std::list<int> CellNodes;
+    std::vector<int> ief(25*nc);
+    std::vector<int> ifn(9*nf);
+    readGridIntegerArray(gridfile, "/iefpoly", ief);
+    readGridIntegerArray(gridfile, "/ifnpoly", ifn);
 
     // Loop over cells
     for (int cell = 0; cell < nc; cell ++){
@@ -87,13 +97,14 @@ int main(int, char*[])
   }
 
   // Read Data and append to file
-  {
-    int nv, nel;
+  if (plotSolution){
+    int nv = 6;
     const char* varnames[6] = {"rho","u","v","w","T","res"};
-    auto solution = readUS3DSolutionFile(datafile, "/solution/run_1/interior", nv, nel);
+    // std::vector<double> solution(nv*nc);
+    auto solution = readUS3DSolutionFile(datafile, "/solution/run_1/interior", nv, nc);
     // std::cout << solution.size()/6 << std::endl;
     // std::cout << std::endl<< nv << ", " << nel << std::endl;
-    add_cell_data(ugrid, solution, varnames, 6, nc);
+      add_cell_data(ugrid, solution, varnames, 6, nc);
   }
 
   std::cout << "writing file" << std::endl;
