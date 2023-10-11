@@ -12,6 +12,7 @@
 #include <vtkCellData.h>
 #include <vtkXMLUnstructuredGridWriter.h>
 #include <iostream>
+#include <thread>
 
 
 
@@ -111,12 +112,8 @@ void add_cell(vtkNew<vtkUnstructuredGrid>& ugrid, const int& cellID,
   ugrid->InsertNextCell(VTK_POLYHEDRON, UniqueCellNodes.size(), pointIds, ncellFaces, faces->GetPointer(0));
 }
 
-void add_points(vtkNew<vtkUnstructuredGrid>& ugrid, const std::vector<double>& xcn, const int& nn ){
-    vtkNew<vtkPoints> points;
-    std::cout <<"add_points "<< nn << std::endl;
-    points->Allocate(nn);
-
-    for (int i = 0; i < nn; i++){
+void add_points_parallel(vtkPoints* points, const std::vector<double>& xcn, int start, int end){
+    for (int i = start; i < end; i++){
         // Calculate the indices once to avoid repeated calculations
         int index = 3 * i;
         double x = xcn[index];
@@ -124,6 +121,32 @@ void add_points(vtkNew<vtkUnstructuredGrid>& ugrid, const std::vector<double>& x
         double z = xcn[index + 2];
       points->InsertNextPoint(x, y, z);
     }
+}
+void add_points(vtkNew<vtkUnstructuredGrid>& ugrid, const std::vector<double>& xcn, const int& nn ){
+    std::cout <<"add_points "<< nn << std::endl;
+
+    vtkNew<vtkPoints> points;
+    points->Allocate(nn);
+
+    // number of threads to use
+    int num_threads = std::thread::hardware_concurrency();
+
+    // Create and launch threads
+    std::vector<std::thread> threads;
+    int points_per_thread = nn / num_threads;
+    int start = 0;
+    
+    for (int i = 0; i < num_threads; i++){
+      int end = (i == num_threads - 1)? nn : start + points_per_thread;
+      threads.push_back(std::thread(add_points_parallel, points.GetPointer(), std::ref(xcn), start, end));
+      start = end;
+    }
+
+    // Join the threads
+    for (auto& thread : threads){
+      thread.join();
+    }
+
     ugrid->SetPoints(points);
 }
 
