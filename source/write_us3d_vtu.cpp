@@ -12,8 +12,27 @@
 #include <vtkCellData.h>
 #include <vtkXMLUnstructuredGridWriter.h>
 #include <iostream>
+#include <hdf5.h>
 
+// Function to display a progress bar
+void displayProgressBar2(int progress, int total) {
+    const int barWidth = 50;
+    float fraction = static_cast<float>(progress) / total;
+    int numBars = static_cast<int>(fraction * barWidth);
 
+    std::cout << "[";
+
+    for (int i = 0; i < barWidth; ++i) {
+        if (i < numBars) {
+            std::cout << "=";
+        } else {
+            std::cout << " ";
+        }
+    }
+
+    std::cout << "] " << int(fraction * 100.0) << "%\r";
+    std::cout.flush();
+}
 
 std::list<int> appendAndUniqify(std::list<int>& inputList, const std::list<int>& valuesToAppend) {
     // Append values to the input list
@@ -40,6 +59,110 @@ void write_VTUFile(const char* filename,
     writer->SetDataModeToAscii();
   }
   writer->Update();
+}
+
+void add_cell_chunk(vtkNew<vtkUnstructuredGrid>& ugrid){
+  
+  // Open the HDF5 file
+  hid_t file_id = H5Fopen("grid.h5", H5F_ACC_RDONLY, H5P_DEFAULT);
+  if (file_id < 0) {
+      fprintf(stderr, "Error opening HDF5 file\n");
+      return;
+  }
+
+  // Open the ifn dataset
+  hid_t ief_dataset = H5Dopen2(file_id, "iefpoly", H5P_DEFAULT);
+  if (ief_dataset < 0) {
+      fprintf(stderr, "Error opening ifn dataset\n");
+      H5Fclose(file_id);
+      return;
+  }
+
+  // Open the xcn dataset
+  hid_t ifn_dataset = H5Dopen2(file_id, "ifnpoly", H5P_DEFAULT);
+  if (ifn_dataset < 0) {
+      fprintf(stderr, "Error opening xcn dataset\n");
+      H5Dclose(ief_dataset);
+      H5Fclose(file_id);
+      return;
+  }
+
+  // Get the dataspace of the ifn dataset
+  hid_t ief_dataspace = H5Dget_space(ief_dataset);
+  if (ief_dataspace < 0) {
+      fprintf(stderr, "Error getting ifn dataspace\n");
+      H5Dclose(ief_dataset);
+      H5Dclose(ifn_dataset);
+      H5Fclose(file_id);
+      return;
+  }
+
+  // Get the number of elements in the ief dataset
+  hsize_t ief_dims[2], ifn_dims[2];
+  H5Sget_simple_extent_dims(ief_dataspace, ief_dims, NULL);
+  int num_elements = (int)ief_dims[0];
+  int num_faces = (int)ief_dims[1];
+
+  // Define the chunk size
+  int chunk_size = 1000;
+  int faceIDX;
+  
+  std::vector<int> ief_chunk(chunk_size*ief_dims[1]);
+  std::vector<int> ifn_chunk(25*9); // max nFaces/cell
+  std::vector<int> selected_ifn_data(9); 
+
+  hsize_t ifn_start[2] = {0, 0}; // Initialize the hyperslab start
+  hsize_t ifn_count[2] = {1, 9}; // Adjust for your dataset dimensions (assuming 2D)
+  
+  // Loop to read and process data in chunks
+  for (int start_idx = 0; start_idx < num_elements; start_idx += chunk_size) {
+      // Calculate the end index for the current chunk
+      int end_idx = start_idx + chunk_size;
+      if (end_idx > num_elements) {
+          end_idx = num_elements;
+      }
+
+      // std::cout << start_idx << " " << end_idx << " " << chunk_size  << std::endl;
+      // Select a hyperslab within the dataspace to read a chunk
+      hsize_t start[2] = {(hsize_t)start_idx, 0}; // Assuming iefpoly is a 2D dataset
+      hsize_t count[2] = {(hsize_t)(end_idx - start_idx), ief_dims[1]}; // Adjust for your dataset dimensions
+      H5Sselect_hyperslab(ief_dataspace, H5S_SELECT_SET, start, NULL, count, NULL);
+      H5Dread(ief_dataset, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT, ief_chunk.data());
+
+      for (int cell = 0; cell < chunk_size; cell++){
+        // Process the data chunk here
+        int ncellFaces = ief_chunk[25*cell];
+        ifn_count[0] = 1;
+        ifn_count[1] = 9;
+
+        hid_t ifn_dataspace = H5Dget_space(ifn_dataset);
+        H5Sget_simple_extent_dims(ifn_dataspace, ifn_dims, NULL);
+
+        for (int cellface = 0; cellface < ncellFaces; cellface++) {
+          faceIDX = (ief_chunk[25*cell + cellface + 1]-1);
+          ifn_start[0] = (hsize_t)(faceIDX);
+          H5Sselect_hyperslab(ifn_dataspace, H5S_SELECT_SET, ifn_start, NULL, ifn_count, NULL);
+          // H5Dread(ifn_dataset, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT, selected_ifn_data.data());
+          for (int node = 0; node < 9; node++){
+            ifn_chunk[9*cellface+node] = selected_ifn_data[node];
+          }
+        }
+        add_cell(ugrid, cell, ief_chunk, ifn_chunk);
+        H5Sclose(ifn_dataspace); // Close the dataspace
+        selected_ifn_data.clear(); // Clear and reuse the vector
+      }
+      displayProgressBar2(start_idx, num_elements);
+
+  }
+
+
+  // Close the HDF5 objects
+  // delete[] ief_chunk;
+  H5Dclose(ifn_dataset);
+  H5Sclose(ief_dataspace);
+  H5Dclose(ief_dataset);
+  H5Fclose(file_id);
+
 }
 
 void add_cell(vtkNew<vtkUnstructuredGrid>& ugrid, const int& cellID, 
@@ -113,7 +236,6 @@ void add_cell(vtkNew<vtkUnstructuredGrid>& ugrid, const int& cellID,
 
 void add_points(vtkNew<vtkUnstructuredGrid>& ugrid, const std::vector<double>& xcn, const int& nn ){
     vtkNew<vtkPoints> points;
-    std::cout <<"add_points "<< nn << std::endl;
     points->Allocate(nn);
 
     for (int i = 0; i < nn; i++){

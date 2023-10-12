@@ -40,14 +40,12 @@ void readGridArraySizes(const char* gridfile, int* nn, int* nf, int* nc, int* nz
     if (status < 0) {
         HDF5Log("Error reading nn attribute.");
     }
-    std::cout << "nn=" << nn << std::endl;
 
     // HDF5Log("Reading nc");
     status = H5Aread(nc_id, H5T_NATIVE_INT, nc);
     if (status < 0) {
         HDF5Log("Error reading nc attribute.");
     }
-    std::cout << "nc=" << nc << std::endl;
 
     // HDF5Log("Reading nf");
     status = H5Aread(nf_id, H5T_NATIVE_INT, nf);
@@ -93,7 +91,6 @@ void readGridDoubleArray(const char* gridfile, const char* dataName, std::vector
     H5Sclose(dataspace_id);
     H5Dclose(dataset_id);
     H5Fclose(file_id);
-    std::cout << data[15] << ", " << data[16] << ", " << data[17] << std::endl; 
 
     return;
 

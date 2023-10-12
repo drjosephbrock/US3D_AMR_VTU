@@ -8,6 +8,8 @@ std::list<int> appendAndUniqify(std::list<int>& inputList, const std::list<int>&
 
 void write_VTUFile(const char* filename, bool writeAscii, const vtkNew<vtkUnstructuredGrid>& ugrid);
 
+void add_cell_chunk(vtkNew<vtkUnstructuredGrid>& ugrid);
+
 void add_cell(vtkNew<vtkUnstructuredGrid>& ugrid, const int& cellID,  const std::vector<int>& ief, const std::vector<int>& ifn);
 
 void add_points(vtkNew<vtkUnstructuredGrid>& ugrid, const std::vector<double>& xcn, const int& nn );
