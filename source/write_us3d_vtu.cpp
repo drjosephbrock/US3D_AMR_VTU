@@ -104,10 +104,9 @@ void add_cell_chunk(vtkNew<vtkUnstructuredGrid>& ugrid){
   int num_faces = (int)ief_dims[1];
 
   // Define the chunk size
-  int chunk_size = 1000;
+  int chunk_size = 100000;
   int faceIDX;
   
-  std::vector<int> ief_chunk(chunk_size*ief_dims[1]);
   std::vector<int> ifn_chunk(25*9); // max nFaces/cell
   std::vector<int> selected_ifn_data(9); 
 
@@ -121,35 +120,93 @@ void add_cell_chunk(vtkNew<vtkUnstructuredGrid>& ugrid){
       if (end_idx > num_elements) {
           end_idx = num_elements;
       }
+      int slab = (end_idx - start_idx);
 
-      // std::cout << start_idx << " " << end_idx << " " << chunk_size  << std::endl;
-      // Select a hyperslab within the dataspace to read a chunk
-      hsize_t start[2] = {(hsize_t)start_idx, 0}; // Assuming iefpoly is a 2D dataset
-      hsize_t count[2] = {(hsize_t)(end_idx - start_idx), ief_dims[1]}; // Adjust for your dataset dimensions
+      std::vector<int> ief_chunk(slab*ief_dims[1]);
+
+      hsize_t start[2]  = {(hsize_t)start_idx, (hsize_t)0};
+      hsize_t count[2]  = {(hsize_t)slab, (hsize_t)ief_dims[1]};
+
       H5Sselect_hyperslab(ief_dataspace, H5S_SELECT_SET, start, NULL, count, NULL);
-      H5Dread(ief_dataset, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT, ief_chunk.data());
+      hid_t memspace = H5Screate_simple(2,count,NULL);   
+      
+      if (memspace < 0) {
+          std::cout << "Error creating memspace." << std::endl;
+          H5Sclose(ief_dataspace);
+          H5Dclose(ief_dataset);
+          H5Fclose(file_id);
+          return;
+      }
 
-      for (int cell = 0; cell < chunk_size; cell++){
+      hsize_t memstart[2]  = {(hsize_t)0, (hsize_t)0};
+      hsize_t memcount[2]  = {(hsize_t)slab, (hsize_t)ief_dims[1]};
+
+      // hid_t status = H5Sselect_hyperslab(memspace, H5S_SELECT_SET, start, NULL, count, NULL);
+      hid_t status = H5Sselect_hyperslab(memspace, H5S_SELECT_SET, memstart, NULL, memcount, NULL);
+    
+      if (status < 0) {
+          std::cout << "Error selecting hyperslab." << std::endl;
+          H5Sclose(ief_dataspace);
+          H5Dclose(ief_dataset);
+          H5Fclose(file_id);
+          return;
+      }
+      hssize_t numel = H5Sget_select_npoints (ief_dataspace);
+      // printf ("\nNumber of Elements Selected: %i\n", (int)numel);  
+      // std::cout << "ief_dataspace dimensions: " << ief_dims[0] << " x " << ief_dims[1] << std::endl;
+      // std::cout << "start: " << start[0] << ", " << start[1] << std::endl;
+      // std::cout << "count: " << count[0] << ", " << count[1] << std::endl;
+      // hsize_t dataset_dims[2];
+      // H5Sget_simple_extent_dims(ief_dataspace, dataset_dims, NULL);
+      // std::cout << "ief_dataspace dimensions: " << dataset_dims[0] << " x " << dataset_dims[1] << std::endl;
+      // H5Sget_simple_extent_dims(memspace, dataset_dims, NULL);
+      // std::cout << "memspace dimensions: " << dataset_dims[0] << " x " << dataset_dims[1] << std::endl;
+
+      herr_t read_status = H5Dread(ief_dataset, H5T_NATIVE_INT, memspace, ief_dataspace, H5P_DEFAULT, ief_chunk.data());
+
+      if (read_status < 0) {
+          std::cout << "Error reading data. status="<< read_status  << std::endl;
+    
+          H5Sclose(ief_dataspace);
+          H5Dclose(ief_dataset);
+          H5Fclose(file_id);
+          return;
+      }
+
+      for (int cell = 0; cell < slab; cell++){
         // Process the data chunk here
         int ncellFaces = ief_chunk[25*cell];
         ifn_count[0] = 1;
         ifn_count[1] = 9;
 
+
+
+
         hid_t ifn_dataspace = H5Dget_space(ifn_dataset);
         H5Sget_simple_extent_dims(ifn_dataspace, ifn_dims, NULL);
-
         for (int cellface = 0; cellface < ncellFaces; cellface++) {
           faceIDX = (ief_chunk[25*cell + cellface + 1]-1);
-          ifn_start[0] = (hsize_t)(faceIDX);
-          H5Sselect_hyperslab(ifn_dataspace, H5S_SELECT_SET, ifn_start, NULL, ifn_count, NULL);
-          // H5Dread(ifn_dataset, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT, selected_ifn_data.data());
+
+          hsize_t start[2]  = {(hsize_t)faceIDX, (hsize_t)0};
+          hsize_t count[2]  = {(hsize_t)1, (hsize_t)ifn_dims[1]};
+          H5Sselect_hyperslab(ifn_dataspace, H5S_SELECT_SET, start, NULL, count, NULL);
+          hid_t memspace = H5Screate_simple(2,count,NULL); 
+          hsize_t memstart[2]  = {(hsize_t)0, (hsize_t)0};
+          hsize_t memcount[2]  = {(hsize_t)1, (hsize_t)ifn_dims[1]};
+          hid_t status = H5Sselect_hyperslab(memspace, H5S_SELECT_SET, memstart, NULL, memcount, NULL);
+          herr_t read_status = H5Dread(ifn_dataset, H5T_NATIVE_INT, memspace, ifn_dataspace, H5P_DEFAULT, selected_ifn_data.data());
+
+
+        //   ifn_start[0] = (hsize_t)(faceIDX);
+        //   H5Sselect_hyperslab(ifn_dataspace, H5S_SELECT_SET, ifn_start, NULL, ifn_count, NULL);
+        //   // H5Dread(ifn_dataset, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT, selected_ifn_data.data());
           for (int node = 0; node < 9; node++){
             ifn_chunk[9*cellface+node] = selected_ifn_data[node];
           }
         }
         add_cell(ugrid, cell, ief_chunk, ifn_chunk);
-        H5Sclose(ifn_dataspace); // Close the dataspace
-        selected_ifn_data.clear(); // Clear and reuse the vector
+        // H5Sclose(ifn_dataspace); // Close the dataspace
+        // selected_ifn_data.clear(); // Clear and reuse the vector
       }
       displayProgressBar2(start_idx, num_elements);
 
@@ -176,11 +233,6 @@ void add_cell(vtkNew<vtkUnstructuredGrid>& ugrid, const int& cellID,
   std::list<int> CellNodes;
   vtkNew<vtkPoints> points;
   vtkNew<vtkIdList> faces;
-  vtkIdType face3[3] = {-1,  -1,  -1};
-  vtkIdType face4[4] = {-1,  -1,  -1,  -1};
-  vtkIdType face5[5] = {-1,  -1,  -1,  -1, -1};
-  vtkIdType face6[6] = {-1,  -1,  -1,  -1, -1, -1};
-  vtkIdType face7[7] = {-1,  -1,  -1,  -1, -1, -1, -1};
   vtkIdType face8[8] = {-1,  -1,  -1,  -1, -1, -1, -1, -1};
 
   auto addFace = [&](const vtkIdType* face, int size) {
@@ -192,36 +244,13 @@ void add_cell(vtkNew<vtkUnstructuredGrid>& ugrid, const int& cellID,
 
 
   for (int cellface = 0; cellface < ncellFaces; cellface++){
-    face = ief[25*cellID + cellface + 1]-1;
-    nFaceNodes = ifn[9*face];
-    // faces->InsertNextId(nFaceNodes);
+    nFaceNodes = ifn[9*cellface];
     for (int faceNode = 0; faceNode < nFaceNodes; faceNode++){
-      node = ifn[9*face + faceNode + 1]-1;
+      node = ifn[9*cellface + faceNode + 1]-1;
       CellNodes.push_back(node);
-      // faces->InsertNextId(face[faceNode])
-      if (nFaceNodes == 4){
-        face4[faceNode] = node;
-      } else if (nFaceNodes == 5){
-        face5[faceNode] = node;
-      } else if (nFaceNodes == 6){
-        face6[faceNode] = node;
-      } else if (nFaceNodes == 7){
-        face7[faceNode] = node;
-      } else if (nFaceNodes == 8){
-        face8[faceNode] = node;
-      }
+      face8[faceNode] = node;
     }
-    if (nFaceNodes == 4){
-      addFace(face4, 4);
-    } else if (nFaceNodes == 5){
-      addFace(face5, 5);
-    } else if (nFaceNodes == 6){
-      addFace(face6, 6);
-    } else if (nFaceNodes == 7){
-      addFace(face7, 7);
-    } else if (nFaceNodes == 8){
-      addFace(face8, 8);
-    }
+    addFace(face8, nFaceNodes);
   }
 
   std::list<int> UniqueCellNodes;
