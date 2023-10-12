@@ -10,9 +10,17 @@
 #include <vtkPoints.h>
 #include <vtkDoubleArray.h>
 #include <vtkCellData.h>
+
+#include <vtkCellArray.h>
+#include <vtkPolygon.h>
+#include <vtkPolyData.h>
+#include <vtkPolyDataMapper.h>
+
 #include <vtkXMLUnstructuredGridWriter.h>
+#include <vtkXMLPolyDataWriter.h>
 #include <iostream>
 #include <hdf5.h>
+#include "read_US3D_hdf5.H"
 
 // Function to display a progress bar
 void displayProgressBar2(int progress, int total) {
@@ -47,9 +55,7 @@ std::list<int> appendAndUniqify(std::list<int>& inputList, const std::list<int>&
     return inputList;
 }
 
-void write_VTUFile(const char* filename,
-                  bool writeAscii,
-                  const vtkNew<vtkUnstructuredGrid>& ugrid){
+void write_VTUFile(const char* filename, bool writeAscii, const vtkNew<vtkUnstructuredGrid>& ugrid){
 
   // Here we write out the cube.
   vtkNew<vtkXMLUnstructuredGridWriter> writer;
@@ -61,16 +67,161 @@ void write_VTUFile(const char* filename,
   writer->Update();
 }
 
+
+void write_VTUsurfaceFile(const char* filename, bool writeAscii, vtkNew<vtkUnstructuredGrid>& ugrid){
+
+  // Here we write out the cube.
+  vtkNew<vtkXMLUnstructuredGridWriter> writer;
+  writer->SetInputData(ugrid);
+  writer->SetFileName(filename);
+  if (writeAscii){
+    writer->SetDataModeToAscii();
+  }
+  writer->Update();
+}
+
+void add_wall_faces(const char* gridfile, const char* datafile, const int& izn, vtkNew<vtkUnstructuredGrid>& ugrid){
+
+  vtkNew<vtkCellArray> polygons;
+  int chunk_size = 100000;
+
+  // Open gridfile
+  hid_t file_id = H5Fopen(gridfile, H5F_ACC_RDONLY, H5P_DEFAULT);
+  // Open xcn (nodes), ifn (for interior cell data) and ifnpoly (for surface nodes)
+  hid_t zdef_dataset = H5Dopen2(file_id, "/zones/zdefs", H5P_DEFAULT);
+  hid_t xcn_dataset = H5Dopen2(file_id, "xcn", H5P_DEFAULT);
+  hid_t ifn_dataset = H5Dopen2(file_id, "ifn", H5P_DEFAULT);
+  hid_t ifnpoly_dataset = H5Dopen2(file_id, "ifnpoly", H5P_DEFAULT);
+  // Get dataspaces for hyperslab
+  hid_t zdef_dataspace = H5Dget_space(zdef_dataset);
+  hid_t xcn_dataspace = H5Dget_space(xcn_dataset);
+  hid_t ifn_dataspace = H5Dget_space(ifn_dataset);
+  hid_t ifnpoly_dataspace = H5Dget_space(ifnpoly_dataset);
+
+  hsize_t xcn_dims[2], ifn_dims[2], ifnpoly_dims[2], dataset_dims[2];
+
+  H5Sget_simple_extent_dims(zdef_dataspace, dataset_dims, NULL);
+  std::cout << "zdefs dimensions: " << dataset_dims[0] << " x " << dataset_dims[1] << std::endl;
+  int zdef[dataset_dims[0]][dataset_dims[1]];
+
+  
+  H5Dread(zdef_dataset, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT, zdef);
+  std::cout << "Selected zone: " << izn << " has range: " << zdef[izn-1][3] << " - " << zdef[izn-1][4] << std::endl;
+
+
+  int faceIDX;
+  int nZoneFaces = zdef[izn-1][4] - zdef[izn-1][3];
+
+  std::vector<int> selected_ifn_data(9);
+  std::vector<int> ifn_zone(9*nZoneFaces);
+  std::vector<int> FaceNodes;
+
+  // Get surface nodes using ifnpoly (in case surface is refined)
+  // Also add nodes from each ifn array into FaceNode vector....
+  H5Sget_simple_extent_dims(ifnpoly_dataspace, ifn_dims, NULL);
+  for (int i = 0; i < nZoneFaces; i++){
+    faceIDX = i + zdef[izn-1][3] - 1;
+    hsize_t start[2]  = {(hsize_t)faceIDX, (hsize_t)0};
+    hsize_t count[2]  = {(hsize_t)1, (hsize_t)ifn_dims[1]};
+    H5Sselect_hyperslab(ifnpoly_dataspace, H5S_SELECT_SET, start, NULL, count, NULL);
+    hid_t memspace = H5Screate_simple(2,count,NULL); 
+    hsize_t memstart[2]  = {(hsize_t)0, (hsize_t)0};
+    hsize_t memcount[2]  = {(hsize_t)1, (hsize_t)ifn_dims[1]};
+    hid_t status = H5Sselect_hyperslab(memspace, H5S_SELECT_SET, memstart, NULL, memcount, NULL);
+    herr_t read_status = H5Dread(ifnpoly_dataset, H5T_NATIVE_INT, memspace, ifnpoly_dataspace, H5P_DEFAULT, selected_ifn_data.data());
+    for (int node = 0; node < 9; node++){
+      ifn_zone[9*i+node] = selected_ifn_data[node];
+      if(selected_ifn_data[node] > 0 && node > 0){
+        FaceNodes.push_back(selected_ifn_data[node]);
+      }
+    }
+  }
+
+  // Sort and uniqify FaceNode vector.
+  std::sort(FaceNodes.begin(), FaceNodes.end());
+  auto last = std::unique(FaceNodes.begin(), FaceNodes.end());
+  FaceNodes.erase(last, FaceNodes.end());
+  std::cout << FaceNodes.size() << std::endl;
+  
+  H5Sget_simple_extent_dims(xcn_dataspace, xcn_dims, NULL);
+  std::cout << "xcn dimensions: " << xcn_dims[0] << " x " << xcn_dims[1] << std::endl;
+  std::vector<double> xcn_reduced(3*FaceNodes.size());
+  std::vector<double> selected_xcn_data(3);
+
+  // Using reduced FaceNodes vector, build mapping from global to surface local numbering
+  int nodeMap[xcn_dims[0]]= {-1}; // global to local mapping
+  for (int i=0; i < FaceNodes.size() ; i ++){
+    nodeMap[FaceNodes[i]] = i;
+
+    hsize_t start[2]  = {(hsize_t)(FaceNodes[i]-1), (hsize_t)0};
+    hsize_t count[2]  = {(hsize_t)1, (hsize_t)3};
+    H5Sselect_hyperslab(xcn_dataspace, H5S_SELECT_SET, start, NULL, count, NULL);
+    hid_t memspace = H5Screate_simple(2,count,NULL); 
+    hsize_t memstart[2]  = {(hsize_t)0, (hsize_t)0};
+    hsize_t memcount[2]  = {(hsize_t)1, (hsize_t)3};
+    hid_t status = H5Sselect_hyperslab(memspace, H5S_SELECT_SET, memstart, NULL, memcount, NULL);
+    herr_t read_status = H5Dread(xcn_dataset, H5T_NATIVE_DOUBLE, memspace, xcn_dataspace, H5P_DEFAULT, selected_xcn_data.data());
+    for (int direction = 0; direction < 3; direction++){
+      xcn_reduced[3*i + direction] = selected_xcn_data[direction];
+    }
+  }
+
+  add_points_poly(ugrid, xcn_reduced, FaceNodes.size());
+
+  // Loop over faces of izn and save polygon data using nodeMap to convert to local numbering
+  std::vector<int> localifn(9);
+  for (int face = 0; face < nZoneFaces; face++){
+    localifn[0] = ifn_zone[9*face];
+    for (int j = 1; j < ifn_zone[9*face]+1; j++){ // ifn_zone[9*i] + s1 for first index being number of nodes for face
+      localifn[j] = nodeMap[ifn_zone[9*face + j]];
+    }
+    add_polygon(ugrid, face, localifn);
+  }
+
+  H5Sclose(xcn_dataspace);
+  H5Sclose(ifn_dataspace);
+  H5Sclose(ifnpoly_dataspace);
+  H5Dclose(xcn_dataset);
+  H5Dclose(ifn_dataset);
+  H5Dclose(ifnpoly_dataset);
+  H5Fclose(file_id);
+}
+
+void add_polygon(vtkNew<vtkUnstructuredGrid>& ugrid, const int& faceID, const std::vector<int>& ifn){
+
+  // Create the polygon
+  vtkNew<vtkPolygon> polygon;
+  polygon->GetPointIds()->SetNumberOfIds(ifn[0]);
+  for (int i=0; i < ifn[0]; i++){
+    polygon->GetPointIds()->SetId(i,ifn[i+1]);
+  }
+  ugrid->InsertNextCell(polygon->GetCellType(), polygon->GetPointIds());
+}
+
+void add_points_poly(vtkNew<vtkUnstructuredGrid>& ugrid, const std::vector<double>& xcn, const int& nn){
+
+    vtkNew<vtkPoints> points;
+    points->Allocate(nn);
+
+    for (int i = 0; i < nn; i++){
+        // Calculate the indices once to avoid repeated calculations
+        int index = 3 * i;
+        double x = xcn[index];
+        double y = xcn[index + 1];
+        double z = xcn[index + 2];
+      points->InsertNextPoint(x, y, z);
+    }
+  ugrid->SetPoints(points);
+}
+
 void add_cell_chunk(vtkNew<vtkUnstructuredGrid>& ugrid){
   
-  // Open the HDF5 file
   hid_t file_id = H5Fopen("grid.h5", H5F_ACC_RDONLY, H5P_DEFAULT);
   if (file_id < 0) {
       fprintf(stderr, "Error opening HDF5 file\n");
       return;
   }
 
-  // Open the ifn dataset
   hid_t ief_dataset = H5Dopen2(file_id, "iefpoly", H5P_DEFAULT);
   if (ief_dataset < 0) {
       fprintf(stderr, "Error opening ifn dataset\n");
@@ -78,7 +229,6 @@ void add_cell_chunk(vtkNew<vtkUnstructuredGrid>& ugrid){
       return;
   }
 
-  // Open the xcn dataset
   hid_t ifn_dataset = H5Dopen2(file_id, "ifnpoly", H5P_DEFAULT);
   if (ifn_dataset < 0) {
       fprintf(stderr, "Error opening xcn dataset\n");
@@ -87,7 +237,6 @@ void add_cell_chunk(vtkNew<vtkUnstructuredGrid>& ugrid){
       return;
   }
 
-  // Get the dataspace of the ifn dataset
   hid_t ief_dataspace = H5Dget_space(ief_dataset);
   if (ief_dataspace < 0) {
       fprintf(stderr, "Error getting ifn dataspace\n");
@@ -97,13 +246,11 @@ void add_cell_chunk(vtkNew<vtkUnstructuredGrid>& ugrid){
       return;
   }
 
-  // Get the number of elements in the ief dataset
   hsize_t ief_dims[2], ifn_dims[2];
   H5Sget_simple_extent_dims(ief_dataspace, ief_dims, NULL);
   int num_elements = (int)ief_dims[0];
   int num_faces = (int)ief_dims[1];
 
-  // Define the chunk size
   int chunk_size = 100000;
   int faceIDX;
   
@@ -222,11 +369,8 @@ void add_cell_chunk(vtkNew<vtkUnstructuredGrid>& ugrid){
 
 }
 
-void add_cell(vtkNew<vtkUnstructuredGrid>& ugrid, const int& cellID, 
-          const std::vector<int>& ief,
-          const std::vector<int>& ifn){
+void add_cell(vtkNew<vtkUnstructuredGrid>& ugrid, const int& cellID, const std::vector<int>& ief, const std::vector<int>& ifn){
   
-
   int node, face;
   int nFaceNodes;
   int ncellFaces = ief[25*cellID];
