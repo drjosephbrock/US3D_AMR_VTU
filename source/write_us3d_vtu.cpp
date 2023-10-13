@@ -150,7 +150,7 @@ void add_wall_faces(const char* gridfile, const char* datafile, const int& izn, 
   std::vector<double> selected_xcn_data(3);
 
   // Using reduced FaceNodes vector, build mapping from global to surface local numbering
-  int nodeMap[xcn_dims[0]]; // global to local mapping
+  std::vector<int> nodeMap(xcn_dims[0]); // global to local mapping
   for (int i=0; i < FaceNodes.size() ; i ++){
     nodeMap[FaceNodes[i]] = i;
 
