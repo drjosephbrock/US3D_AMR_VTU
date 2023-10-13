@@ -110,9 +110,10 @@ void add_wall_faces(const char* gridfile, const char* datafile, const int& izn, 
 
 
   int faceIDX;
-  int nZoneFaces = zdef[izn-1][4] - zdef[izn-1][3];
+  int nZoneFaces = zdef[izn-1][4] - zdef[izn-1][3]+1;
 
-  std::vector<int> selected_ifn_data(9);
+  std::vector<int> selected_ifn_data(8);
+  std::vector<int> selected_ifnpoly_data(9);
   std::vector<int> ifn_zone(9*nZoneFaces);
   std::vector<int> FaceNodes;
 
@@ -128,11 +129,11 @@ void add_wall_faces(const char* gridfile, const char* datafile, const int& izn, 
     hsize_t memstart[2]  = {(hsize_t)0, (hsize_t)0};
     hsize_t memcount[2]  = {(hsize_t)1, (hsize_t)ifn_dims[1]};
     hid_t status = H5Sselect_hyperslab(memspace, H5S_SELECT_SET, memstart, NULL, memcount, NULL);
-    herr_t read_status = H5Dread(ifnpoly_dataset, H5T_NATIVE_INT, memspace, ifnpoly_dataspace, H5P_DEFAULT, selected_ifn_data.data());
+    herr_t read_status = H5Dread(ifnpoly_dataset, H5T_NATIVE_INT, memspace, ifnpoly_dataspace, H5P_DEFAULT, selected_ifnpoly_data.data());
     for (int node = 0; node < 9; node++){
-      ifn_zone[9*i+node] = selected_ifn_data[node];
-      if(selected_ifn_data[node] > 0 && node > 0){
-        FaceNodes.push_back(selected_ifn_data[node]);
+      ifn_zone[9*i+node] = selected_ifnpoly_data[node];
+      if(selected_ifnpoly_data[node] > 0 && node > 0){
+        FaceNodes.push_back(selected_ifnpoly_data[node]);
       }
     }
   }
@@ -149,7 +150,7 @@ void add_wall_faces(const char* gridfile, const char* datafile, const int& izn, 
   std::vector<double> selected_xcn_data(3);
 
   // Using reduced FaceNodes vector, build mapping from global to surface local numbering
-  int nodeMap[xcn_dims[0]]= {-1}; // global to local mapping
+  int nodeMap[xcn_dims[0]]; // global to local mapping
   for (int i=0; i < FaceNodes.size() ; i ++){
     nodeMap[FaceNodes[i]] = i;
 
@@ -178,12 +179,48 @@ void add_wall_faces(const char* gridfile, const char* datafile, const int& izn, 
     add_polygon(ugrid, face, localifn);
   }
 
+
+
+  hid_t datafile_id = H5Fopen(datafile, H5F_ACC_RDONLY, H5P_DEFAULT);
+  hid_t bvars_dataset = H5Dopen2(datafile_id, "/solution/run_1/boundaries", H5P_DEFAULT);
+  hid_t bvars_dataspace = H5Dget_space(bvars_dataset);
+  H5Sget_simple_extent_dims(bvars_dataspace, dataset_dims, NULL);
+  std::cout << "bvars dimensions: " << dataset_dims[0] << " x " << dataset_dims[1] << std::endl;
+
+
+  int nv = dataset_dims[1];
+  std::vector<double> faceSolution(nv*nZoneFaces);
+  std::vector<int> selected_faceSolution(nv);
+  for (int i = 0; i < nZoneFaces; i++){
+    faceIDX = i + zdef[izn-1][3] - 1;
+    hsize_t start[2]  = {(hsize_t)faceIDX, (hsize_t)0};
+    hsize_t count[2]  = {(hsize_t)1, (hsize_t)nv};
+    H5Sselect_hyperslab(bvars_dataspace, H5S_SELECT_SET, start, NULL, count, NULL);
+    hid_t memspace = H5Screate_simple(2,count,NULL); 
+    hsize_t memstart[2]  = {(hsize_t)0, (hsize_t)0};
+    hsize_t memcount[2]  = {(hsize_t)1, (hsize_t)nv};
+    hid_t status = H5Sselect_hyperslab(memspace, H5S_SELECT_SET, memstart, NULL, memcount, NULL);
+    herr_t read_status = H5Dread(bvars_dataset, H5T_NATIVE_INT, memspace, bvars_dataspace, H5P_DEFAULT, selected_faceSolution.data());
+    for (int var = 0; var < nv; var++){
+      faceSolution[nv*i + var] = selected_faceSolution[var];
+    }
+  }
+  // for (int var = 0; var < nv; var++) {
+  //   for (int face = 0; face < nZoneFaces; face++){
+  //     faceSolution[nv * face + var] = face*var;
+  //   }
+  // }
+
+  const char* varnames[11] = {"rhosAir", "u","v", "w","T", "res","flx-rhosAir", "flx-ru","flx-rv", "flx-rw","flx-re"};
+  add_cell_data(ugrid, faceSolution, varnames, nv, nZoneFaces);
+
   H5Sclose(xcn_dataspace);
   H5Sclose(ifn_dataspace);
   H5Sclose(ifnpoly_dataspace);
   H5Dclose(xcn_dataset);
   H5Dclose(ifn_dataset);
   H5Dclose(ifnpoly_dataset);
+  H5Fclose(datafile_id);
   H5Fclose(file_id);
 }
 
@@ -422,7 +459,9 @@ void add_points(vtkNew<vtkUnstructuredGrid>& ugrid, const std::vector<double>& x
     ugrid->SetPoints(points);
 }
 
-void add_cell_data(vtkNew<vtkUnstructuredGrid>& ugrid, const std::vector<double>& solution, const char* variables[], const int& nv, const int& nel) {
+void add_cell_data(vtkNew<vtkUnstructuredGrid>& ugrid, 
+                    const std::vector<double>& solution, 
+                    const char* variables[], const int& nv, const int& nel) {
     for (int var = 0; var < nv; var++) {
         vtkNew<vtkDoubleArray> scalars = vtkNew<vtkDoubleArray>();
         scalars->SetName(variables[var]);
