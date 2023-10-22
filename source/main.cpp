@@ -15,7 +15,8 @@
 int main(int argc, char *argv[])
 {
    int zone = 0;
-   const char *filename = "amr_surface.vtu"; // Default string value
+   const char *sfilename = "amr_surface.vtu"; // Default string value
+   const char *vfilename = "amr_volume.vtu"; // Default string value
    int opt;
    bool plotSolution = false;
    bool plotSurface = false;
@@ -29,7 +30,7 @@ int main(int argc, char *argv[])
          plotSurface = true;
          break;
       case 'f':
-         filename = optarg; // Store the argument as a string
+         sfilename = optarg; // Store the argument as a string
          break;
       case 's':
          plotSolution = true;
@@ -81,11 +82,9 @@ int main(int argc, char *argv[])
       
       add_cell_chunk(ugrid);
       
-      std::vector<std::string> bvnames = readUS3DDataBVnames(datafile);
       std::vector<std::string> svnames = readUS3DDataSVnames(datafile);
 
       int nsv = getUS3DSolutionNSV(datafile);
-      std::cout << "solution size: " << nsv << " x " << nc << std::endl;
       std::vector<double> solution = readUS3DSolutionFile(datafile, "/solution/run_1/interior");
       
       
@@ -98,7 +97,7 @@ int main(int argc, char *argv[])
       add_cell_data(ugrid, solution, varnames, nsv, nc);
 
       std::cout << "writing file" << std::endl;
-      write_VTUFile("amr_mesh.vtu", 0, ugrid);
+      write_VTUFile(vfilename, 0, ugrid);
       std::cout << "Complete" << std::endl;
    }
 
@@ -106,7 +105,7 @@ int main(int argc, char *argv[])
    if (plotSurface){
       // Surface mesh
       add_wall_faces(gridfile, datafile, zone, ugrid, plotSolution);
-      write_VTUsurfaceFile(filename, 1, ugrid);
+      write_VTUsurfaceFile(sfilename, 1, ugrid);
    }
 
    return EXIT_SUCCESS;

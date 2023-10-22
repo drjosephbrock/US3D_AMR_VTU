@@ -313,7 +313,7 @@ void add_cell_chunk(vtkNew<vtkUnstructuredGrid> &ugrid){
   int num_elements = (int)ief_dims[0];
   int num_faces = (int)ief_dims[1];
 
-  int chunk_size = 100000;
+  int chunk_size = 10000;
   int faceIDX;
 
   std::vector<int> ifn_chunk(25 * 9); // max nFaces/cell
@@ -326,9 +326,11 @@ void add_cell_chunk(vtkNew<vtkUnstructuredGrid> &ugrid){
   for (int start_idx = 0; start_idx < num_elements; start_idx += chunk_size) {
     // Calculate the end index for the current chunk
     int end_idx = start_idx + chunk_size;
+
     if (end_idx > num_elements) {
       end_idx = num_elements;
     }
+    
     int slab = (end_idx - start_idx);
 
     std::vector<int> ief_chunk(slab * ief_dims[1]);
@@ -401,7 +403,7 @@ void add_cell_chunk(vtkNew<vtkUnstructuredGrid> &ugrid){
       // H5Sclose(ifn_dataspace); // Close the dataspace
       // selected_ifn_data.clear(); // Clear and reuse the vector
     }
-    displayProgressBar2(start_idx, num_elements);
+    displayProgressBar2(start_idx, num_elements-1);
   }
 
   // Close the HDF5 objects
@@ -412,8 +414,7 @@ void add_cell_chunk(vtkNew<vtkUnstructuredGrid> &ugrid){
   H5Fclose(file_id);
 }
 
-void add_cell(vtkNew<vtkUnstructuredGrid> &ugrid, const int &cellID, const std::vector<int> &ief, const std::vector<int> &ifn)
-{
+void add_cell(vtkNew<vtkUnstructuredGrid> &ugrid, const int &cellID, const std::vector<int> &ief, const std::vector<int> &ifn) {
 
   int node, face;
   int nFaceNodes;
@@ -455,8 +456,7 @@ void add_cell(vtkNew<vtkUnstructuredGrid> &ugrid, const int &cellID, const std::
   ugrid->InsertNextCell(VTK_POLYHEDRON, UniqueCellNodes.size(), pointIds, ncellFaces, faces->GetPointer(0));
 }
 
-void add_points(vtkNew<vtkUnstructuredGrid> &ugrid, const std::vector<double> &xcn, const int &nn)
-{
+void add_points(vtkNew<vtkUnstructuredGrid> &ugrid, const std::vector<double> &xcn, const int &nn) {
   vtkNew<vtkPoints> points;
   points->Allocate(nn);
 
@@ -474,8 +474,8 @@ void add_points(vtkNew<vtkUnstructuredGrid> &ugrid, const std::vector<double> &x
 
 void add_cell_data(vtkNew<vtkUnstructuredGrid> &ugrid,
                    const std::vector<double> &solution,
-                   const char *variables[], const int &nv, const int &nel)
-{
+                   const char *variables[], const int &nv, const int &nel) {
+  std::cout << std::endl;
   for (int var = 0; var < nv; var++)
   {
     vtkNew<vtkDoubleArray> scalars = vtkNew<vtkDoubleArray>();

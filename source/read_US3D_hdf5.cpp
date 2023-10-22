@@ -235,7 +235,6 @@ std::vector<std::string> readUS3DDataSVnames(const char* datafile){
     // Get the number of elements in the dataset
     hsize_t num_elements;
     H5Sget_simple_extent_dims(dataspace, &num_elements, NULL);
-    std::cout << num_elements << std::endl;
 
     // Read the data from the dataset
     char data[num_elements][20];
@@ -248,10 +247,6 @@ std::vector<std::string> readUS3DDataSVnames(const char* datafile){
         std::strncpy(dest, data[i], 20);
         dest[20] = 0; // null terminate destination
         svnames[i] = dest;
-    }
-
-    for (int i = 0; i < num_elements; i++){
-        std::cout << "svnames[" << i << "]:" << trim(svnames[i]) << std::endl;
     }
 
     H5Tclose(datatype);
