@@ -11,6 +11,17 @@ void HDF5Log(const std::string& message){
     std::cout << message << std::endl;
 }
 
+// Function to trim trailing white space from a string
+std::string trim(const std::string& str) {
+    // size_t end = str.find_last_not_of(" \t\n\r\f\v");
+    size_t end = str.find_last_not_of("\n\r\f\v");
+    if (end == std::string::npos) {
+        // String contains only white space
+        return "";
+    }
+    return str.substr(0, end + 1);
+}
+
 void readGridArraySizes(const char* gridfile, int* nn, int* nf, int* nc, int* nz){
     hid_t grid_id, group_id;
     hid_t nn_id, nc_id, nf_id, nz_id;
@@ -122,7 +133,7 @@ void readGridIntegerArray(const char* gridfile, const char* dataName, std::vecto
 
 }
 
-std::vector<double> readUS3DSolutionFile(const char* datafile, const char* dataName, int numRows, int numCols){
+std::vector<double> readUS3DSolutionFile(const char* datafile, const char* dataName){
 
     herr_t status;
 
@@ -133,9 +144,7 @@ std::vector<double> readUS3DSolutionFile(const char* datafile, const char* dataN
     // Get the dimensions of the data
     hsize_t dims[2];
     H5Sget_simple_extent_dims(dataspace_id, dims, NULL);
-    numCols = (int)dims[0];
-    numRows = (int)dims[1];
-    std::vector<double> data(numRows * numCols);
+    std::vector<double> data(dims[0] * dims[1]);
 
     // Read the data from the dataset
     H5Dread(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, data.data());
@@ -148,4 +157,160 @@ std::vector<double> readUS3DSolutionFile(const char* datafile, const char* dataN
 
     return data;
 
+}
+
+void readUS3DSolutionNSV(const char* datafile, int* nsv){
+
+    hid_t file_id, group_id;
+    hid_t nsv_id;
+    herr_t status;
+
+    file_id = H5Fopen(datafile, H5F_ACC_RDONLY, H5P_DEFAULT);
+    group_id = H5Gopen(file_id, "/info/solver", H5P_DEFAULT);
+    nsv_id = H5Aopen(group_id, "nsv", H5P_DEFAULT);
+    status = H5Aread(nsv_id, H5T_NATIVE_INT, nsv);
+    status = H5Aclose(nsv_id);
+    status = H5Gclose(group_id);
+    status = H5Fclose(file_id);
+
+}
+
+int getUS3DSolutionNSV(const char* datafile){
+
+    hid_t file_id, group_id;
+    hid_t nsv_id;
+    herr_t status;
+    int nsv;
+
+    file_id = H5Fopen(datafile, H5F_ACC_RDONLY, H5P_DEFAULT);
+    group_id = H5Gopen(file_id, "/info/solver", H5P_DEFAULT);
+    nsv_id = H5Aopen(group_id, "nsv", H5P_DEFAULT);
+    status = H5Aread(nsv_id, H5T_NATIVE_INT, &nsv);
+    status = H5Aclose(nsv_id);
+    status = H5Gclose(group_id);
+    status = H5Fclose(file_id);
+    return nsv;
+}
+
+int getUS3DSolutionNBV(const char* datafile){
+
+    hid_t file_id, group_id;
+    hid_t nsv_id;
+    herr_t status;
+    int nsv;
+
+    file_id = H5Fopen(datafile, H5F_ACC_RDONLY, H5P_DEFAULT);
+    group_id = H5Gopen(file_id, "/info/solver", H5P_DEFAULT);
+    nsv_id = H5Aopen(group_id, "nbv", H5P_DEFAULT);
+    status = H5Aread(nsv_id, H5T_NATIVE_INT, &nsv);
+    status = H5Aclose(nsv_id);
+    status = H5Gclose(group_id);
+    status = H5Fclose(file_id);
+    return nsv;
+}
+
+std::vector<std::string> readUS3DDataSVnames(const char* datafile){
+
+    std::vector<std::string> svnames;
+
+    // Open the HDF5 file
+    hid_t file_id = H5Fopen(datafile, H5F_ACC_RDONLY, H5P_DEFAULT);
+    if (file_id < 0) {
+        fprintf(stderr, "Unable to open file 'data.h5'\n");
+        return svnames;
+    }
+
+    // Open the dataset
+    hid_t dataset_id = H5Dopen2(file_id, "/info/solver/svnames", H5P_DEFAULT);
+    if (dataset_id < 0) {
+        fprintf(stderr, "Unable to open dataset '/info/solver/svnames'\n");
+        H5Fclose(file_id);
+        return svnames;
+    }
+
+    // Get the datatype and dataspace of the dataset
+    hid_t datatype = H5Dget_type(dataset_id);
+    hid_t dataspace = H5Dget_space(dataset_id);
+
+    // Get the number of elements in the dataset
+    hsize_t num_elements;
+    H5Sget_simple_extent_dims(dataspace, &num_elements, NULL);
+    std::cout << num_elements << std::endl;
+
+    // Read the data from the dataset
+    char data[num_elements][20];
+    char dest[256];     // Destination string
+    svnames.resize(num_elements);
+
+    H5Dread(dataset_id, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, data);
+    // Print the values
+    for (int i = 0; i < num_elements; i++) {
+        std::strncpy(dest, data[i], 20);
+        dest[20] = 0; // null terminate destination
+        svnames[i] = dest;
+    }
+
+    for (int i = 0; i < num_elements; i++){
+        std::cout << "svnames[" << i << "]:" << trim(svnames[i]) << std::endl;
+    }
+
+    H5Tclose(datatype);
+    H5Sclose(dataspace);
+    H5Dclose(dataset_id);
+    H5Fclose(file_id);
+
+    return svnames;
+}
+
+std::vector<std::string> readUS3DDataBVnames(const char* datafile){
+
+    std::vector<std::string> bvnames;
+
+    // Open the HDF5 file
+    hid_t file_id = H5Fopen(datafile, H5F_ACC_RDONLY, H5P_DEFAULT);
+    if (file_id < 0) {
+        fprintf(stderr, "Unable to open file 'data.h5'\n");
+        return bvnames;
+    }
+
+    // Open the dataset
+    hid_t dataset_id = H5Dopen2(file_id, "/info/solver/bvnames", H5P_DEFAULT);
+    if (dataset_id < 0) {
+        fprintf(stderr, "Unable to open dataset '/info/solver/bvnames'\n");
+        H5Fclose(file_id);
+        return bvnames;
+    }
+
+    // Get the datatype and dataspace of the dataset
+    hid_t datatype = H5Dget_type(dataset_id);
+    hid_t dataspace = H5Dget_space(dataset_id);
+
+    // Get the number of elements in the dataset
+    hsize_t num_elements;
+    H5Sget_simple_extent_dims(dataspace, &num_elements, NULL);
+    std::cout << num_elements << std::endl;
+
+    // Read the data from the dataset
+    char data[num_elements][20];
+    char dest[256];     // Destination string
+    bvnames.resize(num_elements);
+
+    H5Dread(dataset_id, datatype, H5S_ALL, H5S_ALL, H5P_DEFAULT, data);
+    // Print the values
+    for (int i = 0; i < num_elements; i++) {
+        std::strncpy(dest, data[i], 20);
+        dest[20] = 0; // null terminate destination
+        bvnames[i] = dest;
+    }
+
+    for (int i = 0; i < num_elements; i++){
+        std::cout << "bvnames[" << i << "]:" << trim(bvnames[i]) << std::endl;
+    }
+
+    H5Tclose(datatype);
+    H5Sclose(dataspace);
+    H5Dclose(dataset_id);
+    H5Fclose(file_id);
+
+    return bvnames;
 }
