@@ -31,6 +31,7 @@ int main(int argc, char *argv[])
          break;
       case 'f':
          sfilename = optarg; // Store the argument as a string
+         vfilename = optarg; // Store the argument as a string
          break;
       case 's':
          plotSolution = true;
