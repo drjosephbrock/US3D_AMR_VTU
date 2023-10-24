@@ -21,7 +21,7 @@ int main(int argc, char *argv[])
    bool plotSolution = false;
    bool plotSurface = false;
    bool plotVolume = false;
-   while ((opt = getopt(argc, argv, "z:f:s:v")) != -1)
+   while ((opt = getopt(argc, argv, "z:f:sv")) != -1)
    {
       switch (opt)
       {
@@ -42,7 +42,11 @@ int main(int argc, char *argv[])
       default:
          std::cout << opt << std::endl;
          // Handle invalid options or display usage information
-         std::cerr << "Usage: " << argv[0] << " -z <zone_value> -f <filename> -s true (default to faults)" << std::endl;
+         std::cerr << "Usage: " << argv[0];
+         std::cerr << " -z <zone_value>";
+         std::cerr << " -f <filename>";
+         std::cerr << " -s true";
+         std::cerr << " -v " << std::endl;
          return 1;
       }
    }

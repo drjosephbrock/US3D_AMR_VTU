@@ -4,8 +4,9 @@ project(writeAMRVTU)
 
 # Set C++ Standard
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -D _GLIBCXX_DEBUG -D _GLIBCXX_DEBUG_PEDANTIC")
-# set(VTK_DIR "/h/brock/Work/Software/VTK-9.3.0.rc1/build/")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -pg -g -D _GLIBCXX_DEBUG -D _GLIBCXX_DEBUG_PEDANTIC")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
+set(VTK_DIR "/h/brock/Work/Software/VTK-9.3.0.rc1/build/")
 
 
 find_package(VTK COMPONENTS 

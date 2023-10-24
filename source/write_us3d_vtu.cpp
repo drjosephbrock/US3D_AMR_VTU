@@ -89,8 +89,11 @@ void write_VTUsurfaceFile(const char *filename, bool writeAscii, vtkNew<vtkUnstr
   writer->Update();
 }
 
-void add_wall_faces(const char *gridfile, const char *datafile, const int &izn, vtkNew<vtkUnstructuredGrid> &ugrid, const bool &plotSolution)
-{
+void add_wall_faces(const char *gridfile, 
+                    const char *datafile, 
+                    const int &izn, 
+                    vtkNew<vtkUnstructuredGrid> &ugrid, 
+                    const bool &plotSolution) {
 
   vtkNew<vtkCellArray> polygons;
   int chunk_size = 100000;
@@ -407,7 +410,6 @@ void add_cell_chunk(vtkNew<vtkUnstructuredGrid> &ugrid){
   }
 
   // Close the HDF5 objects
-  // delete[] ief_chunk;
   H5Dclose(ifn_dataset);
   H5Sclose(ief_dataspace);
   H5Dclose(ief_dataset);
